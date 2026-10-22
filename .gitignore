@@ -6,3 +6,4 @@ cache/
 reports/
 signals_history.csv
 *.tmp
+research/data/

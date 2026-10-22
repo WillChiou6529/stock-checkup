@@ -25,6 +25,11 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from stock_analyzer.analyzer import Context, analyze, is_tw, market_overview
+from stock_analyzer import events as ev_mod
+from stock_analyzer import linkage, news
+from stock_analyzer.datafiles import read_text
+from stock_analyzer.data import yahoo_history
+from stock_analyzer.holders import TDCC, describe
 from stock_analyzer.http import CACHE_DIR
 
 from .visits import Store, mask_ip, parse_ua, summarize, to_local
@@ -106,7 +111,7 @@ class Engine:
         self._cache_lock = threading.Lock()
         self._key_locks: dict = {}
         self.status = {"ready": False, "stage": "啟動中", "pct": 0, "error": None}
-        self.pool = ThreadPoolExecutor(max_workers=4)
+        self.pool = ThreadPoolExecutor(max_workers=8)
 
     # ---- Context（大盤、交易日、台股官方資料）
     def _build(self):
@@ -188,6 +193,35 @@ class Engine:
         return self.cached(("stock", code), STOCK_TTL,
                            lambda: serialize(analyze(code, self.ctx(), note, chart_days=CHART_DAYS)))
 
+    def extra(self, code: str) -> dict:
+        """個股延伸資料：集保大戶、內部人與公告、新聞、國際連動、同業。各自獨立，失敗不影響其他區塊。"""
+        code = code.strip().upper()
+
+        def run():
+            a = self.stock(code)
+            c = self.ctx()
+            tasks = {"news": lambda: news.fetch(code, a["name"] if a["tw"] else code, a["tw"])}
+            if a["tw"]:
+                df, _ = yahoo_history(a["symbol"], "5y")
+                tasks["linkage"] = lambda: linkage.overnight(df)
+                if not a["etf"]:
+                    tasks["holders"] = lambda: describe(TDCC_CLIENT.history(code, 8))
+                    tasks["events"] = lambda: ev_mod.for_stock(code)
+
+                    def peers():
+                        ind, cands = c.tw.industry_peers(code)
+                        return linkage.peers(code, ind, cands, df) if ind else None
+                    tasks["peers"] = peers
+            futs = {k: self.pool.submit(fn) for k, fn in tasks.items()}
+            out = {}
+            for k, f in futs.items():
+                try:
+                    out[k] = f.result(timeout=90)
+                except Exception as e:  # noqa: BLE001
+                    out[k] = {"error": str(e)}
+            return clean(out)
+        return self.cached(("extra", code), 30 * 60, run)
+
     def summaries(self, codes):
         def one(c):
             try:
@@ -215,6 +249,7 @@ class Engine:
         return self.cached("scan", SCAN_TTL, run)
 
 
+TDCC_CLIENT = TDCC()
 engine = Engine()
 app = FastAPI(title="股票健診", docs_url="/api/docs", redoc_url=None)
 
@@ -252,6 +287,22 @@ def stock(code: str):
         return engine.stock(code)
     except Exception as e:  # noqa: BLE001
         _fail(e)
+
+
+@app.get("/api/stock/{code}/extra")
+def stock_extra(code: str):
+    try:
+        return engine.extra(code)
+    except Exception as e:  # noqa: BLE001
+        _fail(e)
+
+
+@app.get("/api/track")
+def track_record():
+    text = read_text("track.json", ttl=1800)
+    if not text:
+        return JSONResponse({"error": "尚無績效追蹤資料"}, status_code=404)
+    return json.loads(text)
 
 
 @app.get("/api/summary")

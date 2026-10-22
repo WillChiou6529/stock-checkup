@@ -8,7 +8,15 @@ services:
     startCommand: uvicorn web.app:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
     autoDeploy: true
+    # 每日排程只會更新 data/，網站直接從 GitHub 讀最新版，不需要重新部署
+    buildFilter:
+      ignoredPaths:
+        - data/**
+        - research/**
+        - .github/**
     envVars:
+      - key: DATA_REMOTE
+        value: "1"
       - key: PYTHON_VERSION
         value: 3.11.9
       - key: TZ

@@ -307,3 +307,11 @@ table.tbl{width:100%;border-collapse:collapse;font-size:14px}
 @keyframes sk{to{background-position:-200% 0}}
 .err{background:var(--dn-bg);border-radius:12px;padding:14px 16px}
 .empty{text-align:center;color:var(--muted);padding:26px 0}
+
+/* 新聞 */
+.news{display:flex;flex-direction:column;gap:2px}
+.nw{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;padding:8px 6px;border-bottom:1px solid var(--line);color:var(--fg);align-items:start}
+.nw:hover{background:var(--card2);text-decoration:none}
+.nw .pill{grid-row:span 2;margin-top:2px}
+.nw .nt{font-size:15px;line-height:1.5}
+.nw .ns{font-size:12px;color:var(--muted)}

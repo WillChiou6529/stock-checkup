@@ -224,6 +224,31 @@ class TWMarket:
             self.warnings.append(f"{code} 月營收資料失敗：{e}")
         return {}
 
+    def industry_peers(self, code: str):
+        """(產業別, [(代號, 名稱, Yahoo 代號, 成交金額)])：依證交所/櫃買產業分類找同業（只含一般股票）。"""
+        self._load_universe()
+        ind_of, members = {}, {}
+        for board in ("listed", "otc"):
+            try:
+                rows = self._revenue_rows(board)
+            except Exception:  # noqa: BLE001
+                continue
+            for r in rows:
+                c = str(_pick(r, "公司代號") or "").strip()
+                ind = str(_pick(r, "產業別") or "").strip()
+                if c and ind:
+                    ind_of[c] = ind
+                    members.setdefault(ind, []).append((c, board))
+        ind = ind_of.get(code)
+        if not ind:
+            return None, []
+        out = []
+        for c, board in members[ind]:
+            q = (self._listed if board == "listed" else self._otc).get(c)
+            if q:
+                out.append((c, q["name"], f"{c}.TW" if board == "listed" else f"{c}.TWO", q["value"] or 0))
+        return ind, out
+
     def eps(self, code: str, board: str) -> dict:
         url = ("https://openapi.twse.com.tw/v1/opendata/t187ap14_L" if board == "listed"
                else "https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap14_O")

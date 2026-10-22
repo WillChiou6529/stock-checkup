@@ -7,9 +7,13 @@ const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const nf = (v, d = 2) => v == null || isNaN(v) ? "—" : Number(v).toLocaleString("zh-TW", { minimumFractionDigits: d, maximumFractionDigits: d });
 const px = v => v == null || isNaN(v) ? "—" : Math.abs(v) >= 1000 ? nf(v, 0) : nf(v, 2);
-const pct = (v, d = 1, sign = true) => v == null || isNaN(v) ? "—" : (sign && v > 0 ? "+" : "") + (v * 100).toFixed(d) + "%";
+const pct = (v, d = 1, sign = true) => {
+  if (v == null || isNaN(v)) return "—";
+  if (Math.abs(v * 100) < 0.5 * Math.pow(10, -d)) v = 0; // 避免 -0.0%
+  return (sign && v > 0 ? "+" : "") + (v * 100).toFixed(d) + "%";
+};
 const pp = (v, d = 1) => v == null || isNaN(v) ? "—" : (v > 0 ? "+" : "") + Number(v).toFixed(d) + "%"; // 已是百分比的數字
-const cls = v => v == null || isNaN(v) || v === 0 ? "" : v > 0 ? "up" : "dn";
+const cls = v => v == null || isNaN(v) || Math.abs(v) < 1e-6 ? "" : v > 0 ? "up" : "dn";
 const sColor = s => s == null ? "var(--muted)" : s >= 60 ? "var(--up)" : s < 45 ? "var(--dn)" : "var(--neu)";
 const ratingPill = r => `<span class="pill ${r === "偏多" ? "p-bull" : r === "偏空" ? "p-bear" : "p-neu"}">${esc(r)}</span>`;
 const boardName = s => s.tw ? (s.etf ? "ETF" : s.board === "otc" ? "上櫃" : "上市") : "美股";
@@ -136,6 +140,7 @@ function route(noBeacon) {
   if (page === "stock" && arg) return viewStock(app, decodeURIComponent(arg).toUpperCase());
   if (page === "scan") return viewScan(app);
   if (page === "about") return viewAbout(app);
+  if (page === "track") return viewTrack(app);
   if (page === "login") return viewLogin(app);
   if (page === "admin") return viewAdmin(app);
   return viewHome(app);
@@ -310,6 +315,7 @@ async function viewStock(app, code) {
   <h2 class="sec-title">關鍵指標 <span class="muted">每個數字下方都有白話解釋</span></h2>
   <div class="card">${indHtml(a)}</div>
   ${a.tw && !a.etf ? `<div class="grid2"><div class="card"><h3>基本面</h3>${fundHtml(a)}</div><div class="card"><h3>籌碼面</h3>${chipsHtml(a)}</div></div>` : ""}
+  <div id="extras"></div>
   <h2 class="sec-title">這套模型在這檔股票上準不準？</h2>
   <div class="card">${btHtml(a)}</div>`;
 
@@ -317,6 +323,7 @@ async function viewStock(app, code) {
   bindCalc(a);
   bindHold(a);
   drawCharts(a);
+  loadExtras(a);
 }
 
 function summaryHtml(a) {
@@ -673,6 +680,7 @@ async function viewAbout(app) {
       <div class="qlabs"><span>分數最低 20%</span><span>第 2 組</span><span>第 3 組</span><span>第 4 組</span><span>分數最高 20%</span></div>
       <p>分數越高，之後表現越好，而且是一階一階遞增，代表分數確實有區分能力。技術總分的 IC：未來 20 日 <b>${(h20.tech.ic > 0 ? "+" : "") + nf(h20.tech.ic, 3)}</b>、60 日 <b>${(h.tech.ic > 0 ? "+" : "") + nf(h.tech.ic, 3)}</b>（0.05 以上在實務上就是有用的訊號）。</p>
       <p class="small muted">我們也發現「風險控管」分數（扣分過熱、高波動、大盤跌破季線）的預測力是<b>負的</b>（60 日 IC ${nf(h.risk.ic, 3)}）：被扣分的股票事後反而表現較好。所以風險分數不計入總分，只用來提醒追高與決定部位大小。這是實際檢驗後的調整，不是憑感覺。</p>`;
+    if (m.full) el.insertAdjacentHTML("afterend", `<div class="card">${fullCardHtml(m.full)}</div>`);
   } catch (e) { const el = $("#mc"); if (el) el.innerHTML = `<h3>這套模型可信嗎？</h3><p class="muted">驗證資料暫時無法載入。</p>`; }
 }
 

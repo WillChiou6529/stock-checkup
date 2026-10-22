@@ -13,27 +13,75 @@ CACHE_DIR = os.environ.get("STOCK_CACHE_DIR") or os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cache")
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 
-# 證交所/櫃買中心對短時間大量請求會封 IP，非快取請求之間至少間隔這麼久
-_THROTTLE_HOSTS = ("www.twse.com.tw", "www.tpex.org.tw")
-_THROTTLE_SEC = 2.2
+# 官方網站對短時間大量請求會封 IP：非快取請求之間至少間隔這麼久（每個主機各自排隊，不互相卡住）
+_THROTTLE = {"www.twse.com.tw": 2.2, "www.tpex.org.tw": 2.2, "mopsov.twse.com.tw": 1.5,
+             "www.tdcc.com.tw": 1.5, "news.google.com": 1.0, "tw.stock.yahoo.com": 0.5}
 _last_hit: dict = {}
-_throttle_lock = threading.Lock()
+_host_locks: dict = {}
+_locks_guard = threading.Lock()
 
 
-def _cache_path(url: str) -> str:
-    return os.path.join(CACHE_DIR, hashlib.sha1(url.encode("utf-8")).hexdigest() + ".json")
+def _cache_path(url: str, ext: str = ".json") -> str:
+    return os.path.join(CACHE_DIR, hashlib.sha1(url.encode("utf-8")).hexdigest() + ext)
 
 
 def _throttle(url: str) -> None:
     host = url.split("/")[2]
-    if host not in _THROTTLE_HOSTS:
+    gap = _THROTTLE.get(host)
+    if not gap:
         return
-    # 鎖住期間 sleep，讓多執行緒（網站）下對同一主機的請求也是排隊送出
-    with _throttle_lock:
-        wait = _THROTTLE_SEC - (time.time() - _last_hit.get(host, 0))
+    with _locks_guard:
+        lock = _host_locks.setdefault(host, threading.Lock())
+    # 鎖住期間 sleep，讓多執行緒下對同一主機的請求也是排隊送出
+    with lock:
+        wait = gap - (time.time() - _last_hit.get(host, 0))
         if wait > 0:
             time.sleep(wait)
         _last_hit[host] = time.time()
+
+
+def get_text(url: str, ttl: float | None = 1800, encoding: str = "utf-8", data: bytes | None = None,
+             headers: dict | None = None, keep=None, retries: int = 3, opener=None) -> str:
+    """抓文字（HTML / RSS / CSV），快取規則同 get_json。data 不為 None 時以 POST 送出（快取鍵含 data）。"""
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    key = url + ("|" + data.decode("utf-8", "replace") if data else "")
+    path = _cache_path(key, ".txt")
+    if os.path.exists(path) and (ttl is None or time.time() - os.path.getmtime(path) < ttl):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return f.read()
+        except OSError:
+            pass
+    last_err = None
+    for attempt in range(retries):
+        try:
+            _throttle(url)
+            h = {"User-Agent": UA}
+            h.update(headers or {})
+            req = urllib.request.Request(url, headers=h, data=data)
+            with (opener.open(req, timeout=30) if opener else urllib.request.urlopen(req, timeout=30)) as resp:
+                raw = resp.read()
+            if raw[:2] == bytes([0x1F, 0x8B]):  # gzip
+                import gzip
+                raw = gzip.decompress(raw)
+            text = raw.decode(encoding, "replace")
+            if keep is None or keep(text):
+                tmp = f"{path}.{threading.get_ident()}.tmp"
+                with open(tmp, "w", encoding="utf-8") as f:
+                    f.write(text)
+                os.replace(tmp, path)
+            return text
+        except urllib.error.HTTPError as e:
+            last_err = e
+            if e.code == 404:
+                break
+        except (urllib.error.URLError, OSError, ValueError) as e:
+            last_err = e
+        time.sleep(2 * (attempt + 1))
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+    raise RuntimeError(f"抓取失敗 {url}: {last_err}")
 
 
 def get_json(url: str, ttl: float | None = 1800, retries: int = 3, keep=None):
