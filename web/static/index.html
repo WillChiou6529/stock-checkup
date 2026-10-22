@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>股票健診</title>
+<meta name="description" content="輸入股票代號，30 秒看懂現在能不能買、買多少、錯了在哪停損。台股上市櫃與美股，技術面、基本面、籌碼面綜合評分。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234263eb'/%3E%3Cpath d='M6 21l6-6 5 4 9-10' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css?v=4">
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <a class="brand" href="#/">
+      <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--accent)"/><path d="M6 21l6-6 5 4 9-10" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>股票健診</span>
+    </a>
+    <nav class="nav">
+      <a href="#/" data-nav="home">首頁</a>
+      <a href="#/scan" data-nav="scan">今日選股</a>
+      <a href="#/about" data-nav="about">怎麼看懂</a>
+    </nav>
+    <div class="search top-search">
+      <input type="search" placeholder="搜尋代號或名稱" autocomplete="off" aria-label="搜尋股票">
+      <div class="sugg" role="listbox"></div>
+    </div>
+    <button class="icon-btn" id="themeBtn" title="切換深淺色" aria-label="切換深淺色">
+      <svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z" fill="currentColor"/></svg>
+    </button>
+  </div>
+</header>
+<div id="warm" class="warm" hidden></div>
+<main id="app"></main>
+<footer class="foot">
+  <p>股票健診由程式依公開資料與固定規則自動產生，僅供研究參考，<b>不構成投資建議</b>。過去的統計不代表未來，投資前請自行判斷並控管風險。</p>
+  <p class="muted">資料來源：Yahoo Finance、臺灣證券交易所、證券櫃檯買賣中心 OpenAPI</p>
+</footer>
+<script src="/static/app.js?v=4"></script>
+</body>
+</html>
