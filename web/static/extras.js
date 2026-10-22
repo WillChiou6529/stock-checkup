@@ -14,6 +14,11 @@ function loadExtras(a) {
     .then(x => {
       const e = $("#extras"); if (!e) return;
       e.innerHTML = extrasHtml(a, x);
+      if (Object.values(x).some(v => v && v.error && v.error.includes("仍在下載"))) {
+        e.insertAdjacentHTML("afterbegin", `<div class="notice warn" style="margin-top:16px">部分延伸資料第一次查詢還在下載中。
+          <button class="btn ghost" id="exRetry" style="margin-left:8px">重新載入</button></div>`);
+        $("#exRetry").onclick = () => loadExtras(a);
+      }
       $$("tr[data-code]", e).forEach(tr => tr.onclick = () => location.hash = `#/stock/${tr.dataset.code}`);
     })
     .catch(e => { const x = $("#extras"); if (x) x.innerHTML = `<div class="err">延伸資料暫時無法取得：${esc(e.message)}</div>`; });

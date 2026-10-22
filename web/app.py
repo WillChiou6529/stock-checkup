@@ -17,6 +17,7 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 
 import numpy as np
 import pandas as pd
@@ -154,6 +155,12 @@ class Engine:
         tw.recent_inst_days("otc", n)
         self.status.update(stage="下載融資融券", pct=75)
         tw.margin("2330", "listed", n), tw.margin("6488", "otc", n)
+        self.status.update(stage="下載美股與集保資料", pct=85)
+        list(self.pool.map(lambda sym: linkage._hist(sym), list(linkage.US)))
+        try:
+            TDCC_CLIENT.dates()
+        except Exception:  # noqa: BLE001
+            pass
 
     def warm(self):
         try:
@@ -213,14 +220,28 @@ class Engine:
                         return linkage.peers(code, ind, cands, df) if ind else None
                     tasks["peers"] = peers
             futs = {k: self.pool.submit(fn) for k, fn in tasks.items()}
-            out = {}
+            out, partial = {}, False
+            deadline = time.time() + 40  # 免費主機的代理約 60 秒會斷線，留餘裕
             for k, f in futs.items():
                 try:
-                    out[k] = f.result(timeout=90)
+                    out[k] = f.result(timeout=max(0.1, deadline - time.time()))
+                except FutureTimeout:
+                    out[k] = {"error": "資料仍在下載中，請稍候 10~20 秒再重新整理"}
+                    partial = True  # 背景會繼續跑完並寫入快取
                 except Exception as e:  # noqa: BLE001
                     out[k] = {"error": str(e)}
-            return clean(out)
-        return self.cached(("extra", code), 30 * 60, run)
+            return clean(out), partial
+
+        key = ("extra", code)
+        with self._cache_lock:
+            hit = self._cache.get(key)
+        if hit and time.time() - hit[0] < 30 * 60:
+            return hit[1]
+        val, partial = run()
+        if not partial:
+            with self._cache_lock:
+                self._cache[key] = (time.time(), val)
+        return val
 
     def summaries(self, codes):
         def one(c):
