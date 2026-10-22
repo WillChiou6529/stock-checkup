@@ -173,7 +173,10 @@ function fullCardHtml(F) {
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">權重組合</th><th>20 日 IC</th><th>60 日 IC</th><th>最高 vs 最低組 60 日差距</th></tr></thead><tbody>${wRows}</tbody></table></div>
     <h4>存活者偏差有多大</h4>
     <p style="margin-top:0">如果只用「今天還在交易」的股票回測，平均 60 日報酬是 <b>${pct(s.mean_survivors)}</b>，納入已下市股票後是 <b>${pct(s.mean_all)}</b>；
-      高分組的 60 日報酬則從 <b>${pct(s.top_q_survivors)}</b> 變成 <b>${pct(s.top_q_all)}</b>。這就是只看「活下來的股票」會讓回測看起來比較漂亮的原因。</p>
+      高分組的 60 日報酬則從 <b>${pct(s.top_q_survivors)}</b> 變成 <b>${pct(s.top_q_all)}</b>。
+      ${Math.abs(s.mean_survivors - s.mean_all) < 0.005
+        ? "差距很小：因為這裡的股票池只收每天成交 2,000 萬元以上的股票，這類股票很少下市。若把冷門小型股也納入，偏差會更明顯，所以回測仍以含下市股票的結果為準。"
+        : "只看「活下來的股票」會讓回測看起來比較漂亮，所以這裡的結果都以含下市股票的版本為準。"}</p>
     ${b ? `<h4>千張大戶持股變化有用嗎？</h4><p style="margin-top:0">集保只提供一年歷史，用成交最大的 ${b.stocks} 檔、${b.periods} 期（每 4 週）檢驗「大戶 4 週加碼幅度」對之後 4 週報酬的預測力：
       IC ${(b.ic > 0 ? "+" : "") + nf(b.ic, 3)}（t=${b.t == null ? "—" : nf(b.t, 1)}，${pct(b.hit, 0, false)} 的期間為正）。${Math.abs(b.t || 0) < 2 ? "樣本只有一年、統計上還不夠可信，所以先列為參考資訊、不計入分數。" : ""}</p>` : ""}`;
 }

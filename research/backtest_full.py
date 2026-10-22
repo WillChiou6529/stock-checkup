@@ -34,10 +34,10 @@ MIN_VALUE = 2e7
 HORIZONS = (20, 60)
 PILLARS = ["trend", "momentum", "volume", "risk", "tech", "fundamental", "chips", "composite", "industry_mom", "big_holder"]
 WEIGHT_SETS = {
-    "目前權重": scoring.WEIGHTS,
+    "目前權重（基本面 65%）": scoring.WEIGHTS,
+    "原本權重（技術 60%）": {"trend": .30, "momentum": .20, "volume": .10, "fundamental": .22, "chips": .18, "risk": 0},
     "只看技術面": {"trend": .30 / .6, "momentum": .20 / .6, "volume": .10 / .6, "fundamental": 0, "chips": 0, "risk": 0},
-    "技術＋基本（無籌碼）": {"trend": .30, "momentum": .20, "volume": .10, "fundamental": .40, "chips": 0, "risk": 0},
-    "技術＋籌碼（無基本）": {"trend": .30, "momentum": .20, "volume": .10, "fundamental": 0, "chips": .40, "risk": 0},
+    "只看基本面": {"trend": 0, "momentum": 0, "volume": 0, "fundamental": 1, "chips": 0, "risk": 0},
     "五面向平均": {"trend": .2, "momentum": .2, "volume": .2, "fundamental": .2, "chips": .2, "risk": 0},
 }
 
@@ -59,7 +59,7 @@ def tstat(s: pd.Series, step: int):
 
 
 def comp(row, w):
-    used = {k: row[k] for k in ("trend", "momentum", "volume", "fundamental", "chips") if w.get(k) and pd.notna(row[k])}
+    used = {k: row[k] for k in ("trend", "momentum", "volume", "fundamental", "chips", "risk") if w.get(k) and pd.notna(row[k])}
     tot = sum(w[k] for k in used)
     return sum(row[k] * w[k] for k in used) / tot if tot else np.nan
 
@@ -73,8 +73,9 @@ def main():
         industry[c] = v.get("industry")
 
     # 合併上市+上櫃面板
-    adj = {k: pd.concat([ds["listed"]["adj"][k], ds["otc"]["adj"][k]], axis=1) for k in ("open", "high", "low", "close", "volume", "value")}
-    raw_close = pd.concat([ds["listed"]["raw"]["close"], ds["otc"]["raw"]["close"]], axis=1)
+    # 上櫃轉上市的股票兩邊都有：以上市資料為主，轉板前的期間用上櫃資料補
+    adj = {k: ds["listed"]["adj"][k].combine_first(ds["otc"]["adj"][k]) for k in ("open", "high", "low", "close", "volume", "value")}
+    raw_close = ds["listed"]["raw"]["close"].combine_first(ds["otc"]["raw"]["close"])
     board = {c: "listed" for c in ds["listed"]["names"]}
     board.update({c: "otc" for c in ds["otc"]["names"]})
     names = {**ds["listed"]["names"], **ds["otc"]["names"]}
@@ -116,7 +117,7 @@ def main():
             row = d.iloc[i_local]
             recs.append({"date": ts, "code": code, "trend": ser["trend"].iloc[i_local], "momentum": ser["momentum"].iloc[i_local],
                          "volume": ser["volume"].iloc[i_local], "risk": ser["risk"].iloc[i_local], "tech": tech.iloc[i_local],
-                         "price": row.raw_close, "vol_ma20": row.vol_ma20, "mom12_1": row.mom12_1,
+                         "price": row.raw_close, "vol_ma20": row.vol_ma20, "mom12_1": row.mom12_1, "value20": val20.get(ts),
                          "ret10": d["close"].iloc[i_local] / d["close"].iloc[i_local - 10] - 1,
                          **{f"fwd{h}": fwd[h].at[ts, code] for h in HORIZONS},
                          **{f"ifwd{h}": idx_fwd[h].at[ts] for h in HORIZONS}})
@@ -132,7 +133,9 @@ def main():
         y, m = (d.year, d.month - 1) if d.month > 1 else (d.year - 1, 12)
         rv = rev.get((r.code, y, m)) or {}
         rv = dict(rv, period=f"{y}/{m:02d}") if rv else {}
-        snap = ds[board[r.code]]["snaps"].get(d) or {}
+        snap = ds["listed"]["snaps"].get(d) or {}
+        if r.code not in (snap.get("inst") or {}) and r.code not in (snap.get("pe") or {}):
+            snap = ds["otc"]["snaps"].get(d) or {}  # 當時在上櫃
         val = (snap.get("pe") or {}).get(r.code) or {}
         fp = scoring.score_fundamental(r.price, val, rv, {}) if (val or rv) else None
         fund.append(fp.result() if fp else np.nan)
@@ -157,7 +160,8 @@ def main():
         R.loc[g.index, "industry_mom"] = (tot - s.fillna(0)) / (n - s.notna().astype(int)).replace(0, np.nan)
     for name, w in WEIGHT_SETS.items():
         R[f"comp::{name}"] = R.apply(lambda row: comp(row, w), axis=1)
-    R["composite"] = R["comp::目前權重"]
+    R["composite"] = R["comp::目前權重（基本面 65%）"]
+    R.to_pickle(os.path.join(ROOT, "research", "data", "samples.pkl"))
 
     # ---- 千張大戶（集保一年樣本）
     big = big_holder_study(close_ff)

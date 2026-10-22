@@ -150,15 +150,21 @@ def adjust(panel: dict, events) -> dict:
 
 
 # ------------------------------------------------------------------ 月營收（含產業別）
-ROW_RE = re.compile(r"<tr align=right><td align=center>(\w+)</td><td align=left>([^<]*)</td>((?:<[tT]d nowrap>[^<]*</[tT]d>){9})")
+ROW_RE = re.compile(r"<tr align=right><td align=center>(\w+)</td><td align=left>([^<]*)</td>((?:<[tT]d nowrap>[^<]*</[tT]d>){8})")
 CELL_RE = re.compile(r">([^<]*)</[tT]d>")
 
 
 def revenue_month(board: str, y: int, m: int):
+    """_0 = 國內公司、_1 = 外國企業（KY 股）。"""
     mk = "sii" if board == "listed" else "otc"
-    url = f"https://mopsov.twse.com.tw/nas/t21/{mk}/t21sc03_{y - 1911}_{m}_0.html"
     final = dt.date(y, m, 1) < dt.date.today().replace(day=1) - dt.timedelta(days=40)
-    t = get_text(url, ttl=None if final else 86400, encoding="big5", keep=lambda s: "公司代號" in s or "產業別" in s)
+    t = ""
+    for suffix in ("0", "1"):
+        url = f"https://mopsov.twse.com.tw/nas/t21/{mk}/t21sc03_{y - 1911}_{m}_{suffix}.html"
+        try:
+            t += get_text(url, ttl=None if final else 86400, encoding="big5", keep=lambda s: "公司代號" in s or "產業別" in s)
+        except Exception:  # noqa: BLE001
+            pass
     out = {}
     for sec in t.split("產業別：")[1:]:
         ind = sec.split("<", 1)[0].strip()
@@ -257,10 +263,32 @@ def build():
     log(f"已寫入 {os.path.join(OUT, 'dataset.pkl')}")
 
 
+def add_revenue():
+    """只補抓月營收併入既有的 dataset.pkl。"""
+    path = os.path.join(OUT, "dataset.pkl")
+    with open(path, "rb") as f:
+        ds = pickle.load(f)
+    rev = {}
+    end = dt.date.today() - dt.timedelta(days=1)
+    y, m = START.year, START.month
+    while dt.date(y, m, 1) < end.replace(day=1):
+        for board in ("listed", "otc"):
+            for c, v in revenue_month(board, y, m).items():
+                rev[(c, y, m)] = v
+        log(f"月營收 {y}/{m:02d} 累計 {len(rev)} 筆")
+        m += 1
+        if m == 13:
+            y, m = y + 1, 1
+    ds["revenue"] = rev
+    with open(path, "wb") as f:
+        pickle.dump(ds, f)
+    log(f"月營收完成：{len(rev)} 筆")
+
+
 def load():
     with open(os.path.join(OUT, "dataset.pkl"), "rb") as f:
         return pickle.load(f)
 
 
 if __name__ == "__main__":
-    build()
+    add_revenue() if "--revenue" in sys.argv else build()

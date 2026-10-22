@@ -268,14 +268,14 @@ async function viewScan(app) {
 
 // ---------------------------------------------------------------- 個股健診
 const PILLARS = [
+  ["fundamental", "基本面", "公司賺不賺錢、貴不貴？看營收成長、本益比、殖利率、EPS（回測最有效的面向）"],
   ["trend", "趨勢", "股價是不是在往上走？看均線位置與方向、中期漲幅"],
-  ["momentum", "動能", "最近的上漲力道強不強？看 RSI、KD、MACD、相對大盤強弱"],
-  ["volume", "量價", "有沒有資金在買？看成交量是否配合股價"],
-  ["fundamental", "基本面", "公司賺不賺錢、貴不貴？看營收成長、本益比、殖利率、EPS"],
+  ["risk", "風險控管", "現在追進去危不危險？看乖離、波動度、大盤位階"],
   ["chips", "籌碼", "大戶在買還是賣？看外資、投信動向與融資變化"],
-  ["risk", "風險控管", "現在追進去危不危險？看乖離、波動度、大盤位階（不計入總分）"],
+  ["momentum", "動能", "最近的上漲力道強不強？看 RSI、KD、MACD（回測無預測力，不計分）"],
+  ["volume", "量價", "有沒有資金在買？看成交量是否配合股價（回測無預測力，不計分）"],
 ];
-const WEIGHTS = { trend: 30, momentum: 20, volume: 10, fundamental: 22, chips: 18, risk: 0 };
+const WEIGHTS = { trend: 15, momentum: 0, volume: 0, fundamental: 65, chips: 10, risk: 10 };
 
 async function viewStock(app, code) {
   document.title = `${code} 健診｜股票健診`;
@@ -297,7 +297,7 @@ async function viewStock(app, code) {
         <div class="s-price num">${px(a.price)}<span class="${cls(a.chg)}">${pct(a.chg, 2)}</span><em>資料日 ${esc(a.date)}${a.currency && a.currency !== "TWD" ? " · " + esc(a.currency) : ""}</em></div>
         <div style="margin-top:10px"><button class="star ${starOn ? "on" : ""}" id="star">${starOn ? "★ 已加入自選" : "☆ 加入自選"}</button></div></div>
       <div class="s-verdict">${gauge(a.score)}<div>${ratingPill(a.rating)}<div class="act">${esc(a.action)}</div>
-        <div class="small muted">技術面 ${Math.round(a.tech_score)} 分</div></div></div>
+        <div class="small muted">技術分 ${Math.round(a.tech_score)}${a.scores.fundamental != null ? ` · 基本面 ${Math.round(a.scores.fundamental)}` : ""}</div></div></div>
     </div>
     <div class="summary">${summaryHtml(a)}</div>
   </div>
@@ -373,7 +373,7 @@ function pillarsHtml(a) {
       <span class="ps" style="color:${sColor(s)}">${Math.round(s)}</span><span class="pw">${w}</span><span class="chev">▶</span></summary>
       <p class="pdesc">${desc}</p>
       <ul class="notes">${notes.map(([p, t]) => `<li class="${p > 0 ? "pos" : "neg"}"><b>${p > 0 ? "+" : ""}${Math.round(p)}</b><span>${esc(t)}</span></li>`).join("") || "<li><span class=\"muted\">沒有明顯訊號（維持 50 分中性）</span></li>"}</ul></details>`;
-  }).join("") + `<p class="small muted" style="margin:10px 0 0">每個面向從 50 分（中性）開始，依規則加減分。總分＝各面向依權重平均；ETF、美股缺少的面向會把權重分給其他面向。</p>`;
+  }).join("") + `<p class="small muted" style="margin:10px 0 0">每個面向從 50 分（中性）開始，依規則加減分。總分＝各面向依權重平均，權重由 2022~2026 全市場回測決定；ETF、美股沒有基本面，分數只反映技術面，參考價值較低。</p>`;
 }
 
 function planHtml(a) {
@@ -629,7 +629,7 @@ async function viewAbout(app) {
   <div class="card author-card"><div class="avatar">邱</div><div><h3>關於作者：邱俊諺</h3>
     <p style="margin:0" class="muted">股票健診從資料抓取、評分模型、統計回測驗證到網站介面，全部由 <b style="color:var(--fg)">邱俊諺</b> 設計與開發。</p></div></div>
   <div class="card prose"><h3>健診分數是什麼？</h3>
-    <p>每檔股票從 <b>5 個面向</b>各打 0~100 分（50 分是中性），再依權重平均成 <b>健診分數</b>：</p>
+    <p>每檔股票從 <b>6 個面向</b>各打 0~100 分（50 分是中性），再依權重平均成 <b>健診分數</b>：</p>
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>面向</th><th class="l">在問什麼</th><th>權重</th></tr></thead><tbody>
     ${PILLARS.map(([k, n, d]) => `<tr><td><b>${n}</b></td><td class="l" style="white-space:normal">${d}</td><td>${WEIGHTS[k] ? WEIGHTS[k] + "%" : "不計分"}</td></tr>`).join("")}
     </tbody></table></div>
@@ -668,19 +668,22 @@ async function viewAbout(app) {
     <li>本益比、殖利率、月營收、EPS、三大法人、融資融券：臺灣證券交易所、證券櫃檯買賣中心官方 OpenAPI。</li>
     <li>法人資料約每天 16:00 公布，融資融券約 21:00 公布；網站每 20 分鐘自動更新一次。盤中查詢時最新的 K 棒是即時價。</li>
     <li>美股只有技術面分析（基本面與籌碼資料需要付費 API）。</li></ul>
-    <p class="small muted">限制：基本面與籌碼沒有可取得的每日歷史，這兩項的權重是依經驗設定、沒有經過回測；驗證樣本是目前仍在交易的權值股，有存活者偏差。本網站僅供研究參考，不構成投資建議。</p></div>`;
+    <p class="small muted">限制：EPS 規則因無法取得時點正確的歷史資料而未納入回測；回測期間 2022~2026 為單一市場循環，未來不一定重演。本網站僅供研究參考，不構成投資建議。</p></div>`;
   try {
     const m = await api("/api/model");
     const el = $("#mc"); if (!el) return;
     const h = m.results["60"] || m.results[Object.keys(m.results).pop()], h20 = m.results["20"];
-    const q = h.quintiles, mx = Math.max(...q.map(Math.abs));
-    el.innerHTML = `<h3>這套模型可信嗎？ <span class="muted">用 ${m.stocks} 檔台股、${esc(m.start)} ~ ${esc(m.end)} 的資料驗證</span></h3>
-      <p style="margin-top:0">每天把所有股票依技術分高低分成 5 組，看之後 60 個交易日各組比平均多賺多少：</p>
-      <div class="qbars">${q.map(v => `<div class="qb"><b class="${cls(v)}">${pct(v)}</b><u class="${v < 0 ? "neg" : ""}" style="height:${Math.abs(v) / mx * 75}%;background:${v >= 0 ? "var(--up)" : "var(--dn)"}"></u></div>`).join("")}</div>
-      <div class="qlabs"><span>分數最低 20%</span><span>第 2 組</span><span>第 3 組</span><span>第 4 組</span><span>分數最高 20%</span></div>
-      <p>分數越高，之後表現越好，而且是一階一階遞增，代表分數確實有區分能力。技術總分的 IC：未來 20 日 <b>${(h20.tech.ic > 0 ? "+" : "") + nf(h20.tech.ic, 3)}</b>、60 日 <b>${(h.tech.ic > 0 ? "+" : "") + nf(h.tech.ic, 3)}</b>（0.05 以上在實務上就是有用的訊號）。</p>
-      <p class="small muted">我們也發現「風險控管」分數（扣分過熱、高波動、大盤跌破季線）的預測力是<b>負的</b>（60 日 IC ${nf(h.risk.ic, 3)}）：被扣分的股票事後反而表現較好。所以風險分數不計入總分，只用來提醒追高與決定部位大小。這是實際檢驗後的調整，不是憑感覺。</p>`;
-    if (m.full) el.insertAdjacentHTML("afterend", `<div class="card">${fullCardHtml(m.full)}</div>`);
+    if (m.full) {
+      el.innerHTML = fullCardHtml(m.full) + `<h4>為什麼權重是這樣？（實際檢驗後的調整）</h4>
+        <p style="margin-top:0">最早的版本只用 ${m.stocks} 檔權值股、每天取樣驗證技術面，結果看起來不錯（技術分 60 日 IC ${(h.tech.ic > 0 ? "+" : "") + nf(h.tech.ic, 3)}）。
+        但擴大到上面的全市場、時點正確、含下市股票的回測後發現：<b>技術面（動能、量價）在大型股和中小型股都沒有穩定的預測力</b>，
+        <b>籌碼面（法人、融資）也接近零</b>；真正每一年都有效的是<b>基本面</b>（營收成長＋合理評價）。</p>
+        <p>所以健診分數改成以基本面為主（65%），保留少量趨勢（15%，不逆勢）與風險控管（10%，不追高），籌碼 10%；動能與量價改為「不計分、只列理由」。
+        這不是憑感覺，而是讓數字決定；回測程式放在 research/ 資料夾，資料更新後重跑，結果變了就照數字調整。</p>`;
+    } else {
+      el.innerHTML = `<h3>這套模型可信嗎？</h3><p class="muted">完整回測資料尚未產生。</p>`;
+    }
+
   } catch (e) { const el = $("#mc"); if (el) el.innerHTML = `<h3>這套模型可信嗎？</h3><p class="muted">驗證資料暫時無法載入。</p>`; }
 }
 

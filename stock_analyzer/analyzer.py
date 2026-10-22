@@ -129,9 +129,9 @@ def analyze(code: str, ctx: Context, note: str | None = None, overrides: dict | 
     weighted = [(p * scoring.WEIGHTS[k], t) for k, ns in notes.items() for p, t in ns]
     extra = []
     if etf:
-        extra.append("ETF 不計基本面與籌碼分數，以技術面與大盤為主。")
+        extra.append("ETF 沒有基本面資料，分數只反映技術面；回測顯示技術面對未來報酬的預測力很弱，請搭配大盤位階判斷。")
     elif not tw:
-        extra.append("美股僅提供技術面分析（基本面/籌碼資料源需付費 API）。")
+        extra.append("美股只有技術面（基本面資料需付費 API）；回測顯示技術面的預測力很弱，分數僅供參考。")
     if plan["rr"] is not None and plan["rr"] < 1.5 and act in ("買進", "逢回分批布局"):
         extra.append(f"以現價進場的風險報酬比僅 {plan['rr']:.1f}，建議等回到進場區再買。")
 

@@ -2,9 +2,10 @@
 
 每個面向 0~100 分，50 為中性。每條規則同時記錄「今日」的加減分與理由，報告中的每句話都對應實際計分。
 
-權重依據 validate_model.py 的橫斷面檢定：趨勢/動能/量價對未來 20~60 日相對報酬有正向預測力；
-「風險控管」分數（乖離、波動、大盤位階）預測力為負，因此不計入總分，只用於部位控管與追高提醒。
-基本面/籌碼沒有可回測的每日歷史，權重屬經驗設定。
+權重依據 research/backtest_full.py 的時點正確回測（2022~2026、1,652 檔含已下市股票、每月底取樣）：
+- 基本面是唯一在大型股與中小型股都穩定有效的面向（20/60 日 IC +0.05/+0.08，t 值 3~4，每一年都為正）
+- 動能、量價、籌碼的預測力接近零，不計入總分（仍顯示理由供參考）
+- 保留少量趨勢（不逆勢）與風險控管（不追高），兩者在全市場樣本為正向
 """
 from __future__ import annotations
 
@@ -13,9 +14,9 @@ import math
 import numpy as np
 import pandas as pd
 
-WEIGHTS = {"trend": 0.30, "momentum": 0.20, "volume": 0.10, "fundamental": 0.22, "chips": 0.18, "risk": 0.0}
+WEIGHTS = {"trend": 0.15, "momentum": 0.0, "volume": 0.0, "fundamental": 0.65, "chips": 0.10, "risk": 0.10}
 TECH_KEYS = ("trend", "momentum", "volume", "risk")
-SCORED_TECH = ("trend", "momentum", "volume")
+SCORED_TECH = ("trend", "risk")  # 技術分 = 有計入總分的技術面向
 PILLAR_NAMES = {"trend": "趨勢", "momentum": "動能", "volume": "量價", "fundamental": "基本面",
                 "chips": "籌碼", "risk": "風險控管"}
 

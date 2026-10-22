@@ -398,8 +398,8 @@ def render(results, errors, market, flows, warnings, out_dir, model_card_path) -
 <div class="muted">{now:%Y/%m/%d %H:%M} 產生 · 共 {len(results)} 檔 · 價格來源 Yahoo Finance（還原權息）· 基本面/籌碼來源 證交所、櫃買中心 OpenAPI</div>
 <h3>大盤概況</h3>{_market(market, flows)}
 <h3>總覽（依綜合評分排序）</h3>{_overview(results)}
-<p class="small muted">總分 = 趨勢 30% + 動能 20% + 量價 10% + 基本面 22% + 籌碼 18%（不適用的面向權重按比例分給其他面向）。
-≥72 買進、60~72 逢回布局、45~60 觀望、35~45 減碼、&lt;35 賣出／避開。風險分數不計入總分，只用於追高提醒與部位控管。</p>"""]
+<p class="small muted">總分 = 基本面 65% + 趨勢 15% + 風險控管 10% + 籌碼 10%（依 2022~2026 全市場回測決定；不適用的面向權重按比例分給其他面向）。
+≥72 買進、60~72 逢回布局、45~60 觀望、35~45 減碼、&lt;35 賣出／避開。動能與量價僅供參考、不計分。</p>"""]
     if errors:
         body.append('<p class="small dn">無法分析：' + "；".join(E(f"{c}（{m}）") for c, m in errors) + "</p>")
     body += [_stock_card(a) for a in results]

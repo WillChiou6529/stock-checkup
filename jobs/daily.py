@@ -8,7 +8,6 @@
 """
 from __future__ import annotations
 
-import csv
 import datetime as dt
 import json
 import os
@@ -25,20 +24,6 @@ from stock_analyzer.universe import BASKET  # noqa: E402
 
 def log(msg):
     print(f"[{dt.datetime.now():%H:%M:%S}] {msg}", flush=True)
-
-
-def bootstrap_from_cli(rows: list) -> list:
-    """第一次執行時，把本機命令列版留下的 signals_history.csv 併入（上線前的實際紀錄）。"""
-    path = os.path.join(ROOT, "signals_history.csv")
-    if not os.path.exists(path):
-        return rows
-    have = {(r["date"], r["code"]) for r in rows}
-    with open(path, encoding="utf-8-sig", newline="") as f:
-        for r in csv.DictReader(f):
-            if (r["date"], r["code"]) not in have:
-                r["source"] = "命令列"
-                rows.append(r)
-    return rows
 
 
 def main():
@@ -78,7 +63,7 @@ def main():
         results = [a for a in pool.map(one, list(source)) if a]
     log(f"完成 {len(results)}/{len(source)} 檔健診")
 
-    rows = bootstrap_from_cli(track.read_signals())
+    rows = track.read_signals()
     for a in results:
         rows.append(track.row_from(a, a["date"].isoformat(), source[a["code"]]))
     track.save_signals(rows)
