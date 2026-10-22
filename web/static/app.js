@@ -692,10 +692,9 @@ function viewLogin(app) {
   document.title = "管理員登入｜股票健診";
   app.innerHTML = `<div class="login-wrap"><form class="card login" id="loginForm" autocomplete="on">
     <div class="lock-ic"><svg viewBox="0 0 24 24" width="26" height="26"><path d="M7 10V7a5 5 0 0 1 10 0v3h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h1zm2 0h6V7a3 3 0 0 0-6 0v3z" fill="currentColor"/></svg></div>
-    <h1>管理員登入</h1><p class="muted">登入後可以查看網站的造訪紀錄</p>
+    <h1>管理員登入</h1>
     <label>帳號<input name="u" autocomplete="username" placeholder="請輸入帳號" required></label>
     <label>密碼<input name="p" type="password" autocomplete="current-password" placeholder="請輸入密碼" required></label>
-    <div class="login-hint">💡 提示：帳號和密碼都是 <b>a</b> 開頭</div>
     <div class="err" id="lerr" hidden></div>
     <button class="btn big" id="lbtn">登入</button>
     <a href="#/" class="small" style="text-align:center">← 回首頁</a></form></div>`;
