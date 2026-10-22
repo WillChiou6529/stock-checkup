@@ -103,7 +103,7 @@ $("#themeBtn").addEventListener("click", () => {
   const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
   store.set("theme", dark ? "light" : "dark");
   applyTheme();
-  route();
+  route(true);
 });
 applyTheme();
 
@@ -126,16 +126,35 @@ async function pollWarm() {
 let charts = [];
 function clearCharts() { charts.forEach(c => { try { c.remove(); } catch (e) { /* 已移除 */ } }); charts = []; }
 
-function route() {
+function route(noBeacon) {
   clearCharts();
   const [, page = "", arg = ""] = (location.hash.slice(1) || "/").split("/");
   $$(".nav a").forEach(a => a.classList.toggle("on", a.dataset.nav === (page || "home")));
   const app = $("#app");
   window.scrollTo(0, 0);
+  if (noBeacon !== true) beacon(page);
   if (page === "stock" && arg) return viewStock(app, decodeURIComponent(arg).toUpperCase());
   if (page === "scan") return viewScan(app);
   if (page === "about") return viewAbout(app);
+  if (page === "login") return viewLogin(app);
+  if (page === "admin") return viewAdmin(app);
   return viewHome(app);
+}
+
+// ---------------------------------------------------------------- 造訪回報（給後台統計）
+let firstVisit = true;
+function beacon(page) {
+  if (page === "admin" || page === "login") return;
+  let vid = store.get("vid", null);
+  if (!vid) { vid = (window.crypto && crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now()).replace(/-/g, "").slice(0, 12); store.set("vid", vid); }
+  const info = { vid, path: location.hash || "#/", sw: screen.width, sh: screen.height, dpr: window.devicePixelRatio || 1,
+    touch: navigator.maxTouchPoints || 0, lang: navigator.language || "", ref: firstVisit ? document.referrer : "" };
+  firstVisit = false;
+  const send = ch => fetch("/api/visit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign(info, { ch })), keepalive: true }).catch(() => {});
+  const uad = navigator.userAgentData;
+  if (uad && uad.getHighEntropyValues) {
+    uad.getHighEntropyValues(["model", "platformVersion"]).then(v => send({ model: v.model, platformVersion: v.platformVersion, mobile: uad.mobile })).catch(() => send({}));
+  } else send({});
 }
 window.addEventListener("hashchange", route);
 
@@ -144,6 +163,7 @@ function viewHome(app) {
   document.title = "股票健診｜30 秒看懂一檔股票";
   app.innerHTML = `
   <section class="hero">
+    <div class="credit"><span>本網站由</span><b>邱俊諺</b><span>獨立設計與開發</span></div>
     <h1>幫你的股票做個健診</h1>
     <p>輸入代號，30 秒看懂：<b>現在能不能買、在哪買、買多少、錯了在哪停損</b>。</p>
     <div class="search hero-search"><input type="search" placeholder="輸入代號或名稱，例如 2330、台積電、NVDA" autocomplete="off" aria-label="搜尋股票"><div class="sugg"></div></div>
@@ -599,6 +619,8 @@ function drawCharts(a) {
 async function viewAbout(app) {
   document.title = "怎麼看懂｜股票健診";
   app.innerHTML = `<h1 style="font-size:26px;margin:8px 0 16px">怎麼看懂健診報告</h1>
+  <div class="card author-card"><div class="avatar">邱</div><div><h3>關於作者：邱俊諺</h3>
+    <p style="margin:0" class="muted">股票健診從資料抓取、評分模型、統計回測驗證到網站介面，全部由 <b style="color:var(--fg)">邱俊諺</b> 設計與開發。</p></div></div>
   <div class="card prose"><h3>健診分數是什麼？</h3>
     <p>每檔股票從 <b>5 個面向</b>各打 0~100 分（50 分是中性），再依權重平均成 <b>健診分數</b>：</p>
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>面向</th><th class="l">在問什麼</th><th>權重</th></tr></thead><tbody>
@@ -652,6 +674,99 @@ async function viewAbout(app) {
       <p>分數越高，之後表現越好，而且是一階一階遞增，代表分數確實有區分能力。技術總分的 IC：未來 20 日 <b>${(h20.tech.ic > 0 ? "+" : "") + nf(h20.tech.ic, 3)}</b>、60 日 <b>${(h.tech.ic > 0 ? "+" : "") + nf(h.tech.ic, 3)}</b>（0.05 以上在實務上就是有用的訊號）。</p>
       <p class="small muted">我們也發現「風險控管」分數（扣分過熱、高波動、大盤跌破季線）的預測力是<b>負的</b>（60 日 IC ${nf(h.risk.ic, 3)}）：被扣分的股票事後反而表現較好。所以風險分數不計入總分，只用來提醒追高與決定部位大小。這是實際檢驗後的調整，不是憑感覺。</p>`;
   } catch (e) { const el = $("#mc"); if (el) el.innerHTML = `<h3>這套模型可信嗎？</h3><p class="muted">驗證資料暫時無法載入。</p>`; }
+}
+
+// ---------------------------------------------------------------- 登入
+function viewLogin(app) {
+  document.title = "管理員登入｜股票健診";
+  app.innerHTML = `<div class="login-wrap"><form class="card login" id="loginForm" autocomplete="on">
+    <div class="lock-ic"><svg viewBox="0 0 24 24" width="26" height="26"><path d="M7 10V7a5 5 0 0 1 10 0v3h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h1zm2 0h6V7a3 3 0 0 0-6 0v3z" fill="currentColor"/></svg></div>
+    <h1>管理員登入</h1><p class="muted">登入後可以查看網站的造訪紀錄</p>
+    <label>帳號<input name="u" autocomplete="username" placeholder="請輸入帳號" required></label>
+    <label>密碼<input name="p" type="password" autocomplete="current-password" placeholder="請輸入密碼" required></label>
+    <div class="login-hint">💡 提示：帳號和密碼都是 <b>a</b> 開頭</div>
+    <div class="err" id="lerr" hidden></div>
+    <button class="btn big" id="lbtn">登入</button>
+    <a href="#/" class="small" style="text-align:center">← 回首頁</a></form></div>`;
+  const f = $("#loginForm");
+  if (window.innerWidth > 760) f.u.focus();
+  f.onsubmit = async e => {
+    e.preventDefault();
+    const btn = $("#lbtn"), err = $("#lerr");
+    btn.disabled = true; btn.textContent = "登入中…"; err.hidden = true;
+    try {
+      const r = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: f.u.value.trim(), password: f.p.value }) });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.detail || "登入失敗"); }
+      location.hash = "#/admin";
+    } catch (ex) { err.textContent = ex.message; err.hidden = false; btn.disabled = false; btn.textContent = "登入"; f.p.select(); }
+  };
+}
+
+// ---------------------------------------------------------------- 後台：造訪紀錄
+const DEV_EMOJI = { "手機": "📱", "平板": "📲", "電腦": "💻", "機器人": "🤖" };
+async function viewAdmin(app) {
+  document.title = "造訪紀錄｜股票健診";
+  app.innerHTML = loading("載入造訪紀錄…");
+  const bots = store.get("adm_bots", false);
+  let d;
+  try {
+    const r = await fetch(`/api/admin/visits?limit=500&bots=${bots ? 1 : 0}`);
+    if (r.status === 401) { location.hash = "#/login"; return; }
+    d = await r.json();
+    if (!r.ok) throw new Error(d.detail || "讀取失敗");
+  } catch (e) { app.innerHTML = `<div class="err">${esc(e.message)}</div>`; return; }
+  if (!location.hash.startsWith("#/admin")) return;
+  const st = d.stats;
+  const hbars = (list, total) => list.length ? list.map(([k, n]) => `<div class="hb"><span class="hn" title="${esc(k)}">${esc(k)}</span><span class="ht"><u style="width:${(n / (list[0][1] || 1) * 100).toFixed(0)}%"></u></span><span class="hc">${n}</span></div>`).join("") : '<div class="muted small">尚無資料</div>';
+  const mx = Math.max(1, ...st.daily.map(x => x.visits));
+  app.innerHTML = `
+  <div class="adm-head"><div><h1>造訪紀錄</h1><div class="small muted">${st.first ? `自 ${esc(st.first)} 起` : "尚無紀錄"}　·　時間皆為台灣時間</div></div>
+    <div class="adm-actions"><label><input type="checkbox" id="botTog" ${bots ? "checked" : ""}>顯示機器人</label>
+      <button class="btn ghost" id="admRefresh">重新整理</button><button class="btn ghost" id="admOut">登出</button></div></div>
+  ${d.storage === "postgres" ? `<div class="notice ok">✅ 紀錄存在雲端資料庫，主機休眠或重新部署也不會遺失。</div>`
+    : `<div class="notice warn">⚠️ 目前紀錄只存在主機上，免費主機休眠或重新部署後會清空。到 Render 設定 <b>DATABASE_URL</b> 即可永久保存。</div>`}
+  ${d.storage_error ? `<div class="notice warn">資料庫狀態：${esc(d.storage_error)}</div>` : ""}
+  ${d.default_password ? `<div class="notice warn">🔑 目前使用預設密碼 admin，而且登入頁有提示，任何人都猜得到。建議到 Render 的 Environment 設定 <b>ADMIN_PASS</b> 換成自己的密碼。</div>` : ""}
+  <div class="stats">
+    <div class="stat"><span>總造訪次數</span><b class="num">${st.total.toLocaleString()}</b><em>頁面瀏覽數</em></div>
+    <div class="stat"><span>不重複訪客</span><b class="num">${st.visitors.toLocaleString()}</b><em>以瀏覽器區分</em></div>
+    <div class="stat"><span>今日造訪</span><b class="num">${st.today}</b><em>${st.today_visitors} 位訪客</em></div>
+    <div class="stat"><span>近 7 日</span><b class="num">${st.week}</b><em>次造訪</em></div>
+    <div class="stat"><span>手機／平板占比</span><b class="num">${Math.round(st.mobile_share * 100)}%</b><em>其餘為電腦</em></div>
+  </div>
+  <div class="card"><h3>近 14 日造訪 <span class="muted">紅色是今天</span></h3>
+    <div class="dbars">${st.daily.map((x, i) => `<div class="db ${i === st.daily.length - 1 ? "today" : ""}" title="${x.date}：${x.visits} 次、${x.visitors} 位訪客"><b>${x.visits || ""}</b><u style="height:${x.visits / mx * 100}%"></u></div>`).join("")}</div>
+    <div class="dlabs">${st.daily.map(x => `<span>${x.date.slice(5).replace("-", "/")}</span>`).join("")}</div></div>
+  <div class="brk">
+    <div class="card"><h3>作業系統</h3>${hbars(st.os, st.total)}</div>
+    <div class="card"><h3>裝置類型</h3>${hbars(st.device.map(([k, n]) => [(DEV_EMOJI[k] || "") + " " + k, n]), st.total)}</div>
+    <div class="card"><h3>瀏覽器</h3>${hbars(st.browser, st.total)}</div>
+    <div class="card"><h3>裝置型號</h3>${hbars(st.models, st.total)}</div>
+    <div class="card"><h3>熱門頁面</h3>${hbars(st.pages, st.total)}</div>
+  </div>
+  <h2 class="sec-title">每一筆造訪 <span class="muted">最新 ${d.rows.length} 筆</span></h2>
+  <div class="card"><div class="flt"><input type="search" id="vq" placeholder="篩選：例如 iPhone、Android、2330、LINE"><span class="small muted" id="vcount"></span></div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>時間</th><th class="l">裝置</th><th class="l">系統</th><th class="l">瀏覽器</th><th class="l">看了什麼</th><th class="l hide-m">IP（遮蔽）</th><th class="l hide-m">訪客</th></tr></thead>
+    <tbody id="vbody"></tbody></table></div></div>`;
+  const vc = {};
+  d.rows.forEach(r => { vc[r.visitor] = (vc[r.visitor] || 0) + 1; });
+  const page = p => { p = (p || "").replace(/^#/, ""); if (p.startsWith("/stock/")) return "個股 " + esc(p.split("/")[2]); return { "/": "首頁", "": "首頁", "/scan": "今日選股", "/about": "怎麼看懂" }[p] || esc(p); };
+  const rowHtml = r => `<tr><td class="num">${esc(r.time)}</td>
+    <td class="l"><div class="dev"><span class="de">${DEV_EMOJI[r.device] || "❔"}</span><div>${esc(r.device)}<small>${esc(r.model || "—")}</small></div></div></td>
+    <td class="l"><span class="osb os-${esc(r.os)}">${esc(r.os)}</span><span class="small muted">${esc(r.os_ver)}</span></td>
+    <td class="l">${esc(r.browser)}</td><td class="l">${page(r.path)}</td>
+    <td class="l hide-m num small">${esc(r.ip)}</td><td class="l hide-m small" title="${esc(r.ua)}"><code>${esc(r.visitor.slice(0, 6))}</code> <span class="muted">${vc[r.visitor]} 次</span></td></tr>`;
+  const draw = () => {
+    const q = $("#vq").value.trim().toLowerCase();
+    const rows = q ? d.rows.filter(r => [r.time, r.device, r.model, r.os, r.os_ver, r.browser, r.path, r.ip, r.ua].join(" ").toLowerCase().includes(q)) : d.rows;
+    $("#vbody").innerHTML = rows.map(rowHtml).join("") || `<tr><td colspan="7" class="empty">${d.rows.length ? "沒有符合的紀錄" : "還沒有人造訪。用手機打開網站試試看！"}</td></tr>`;
+    $("#vcount").textContent = q ? `符合 ${rows.length} 筆` : "";
+  };
+  $("#vq").addEventListener("input", draw);
+  draw();
+  $("#botTog").onchange = e => { store.set("adm_bots", e.target.checked); viewAdmin(app); };
+  $("#admRefresh").onclick = () => viewAdmin(app);
+  $("#admOut").onclick = async () => { await fetch("/api/logout", { method: "POST" }).catch(() => {}); location.hash = "#/login"; };
 }
 
 // ---------------------------------------------------------------- 啟動

@@ -13,3 +13,9 @@ services:
         value: 3.11.9
       - key: TZ
         value: Asia/Taipei
+      # 管理員登入 cookie 的簽章金鑰（Render 自動產生）
+      - key: SECRET_KEY
+        generateValue: true
+      # 造訪紀錄的永久儲存（PostgreSQL 連線字串，例如 Neon）；沒設會存在主機上，休眠後清空
+      - key: DATABASE_URL
+        sync: false

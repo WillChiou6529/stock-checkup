@@ -7,20 +7,27 @@
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
+import hmac
 import json
 import math
 import os
+import secrets
 import threading
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from stock_analyzer.analyzer import Context, analyze, is_tw, market_overview
+from stock_analyzer.http import CACHE_DIR
+
+from .visits import Store, mask_ip, parse_ua, summarize, to_local
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
@@ -225,7 +232,7 @@ def _fail(e: Exception):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, **engine.status}
+    return {"ok": True, **engine.status, "storage": visits.kind}
 
 
 @app.get("/api/market")
@@ -294,6 +301,108 @@ def model():
             return json.load(f)
     except (OSError, ValueError):
         return JSONResponse({"error": "尚無模型驗證資料"}, status_code=404)
+
+
+# ------------------------------------------------------------------ 造訪紀錄 / 管理員
+ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
+ADMIN_PASS = os.environ.get("ADMIN_PASS", "admin")
+SECRET = (os.environ.get("SECRET_KEY") or secrets.token_hex(32)).encode()
+SESSION_DAYS = 7
+COOKIE = "sc_admin"
+visits = Store(os.path.join(CACHE_DIR, "visits.sqlite3"))
+_login_fail: dict = {}
+
+
+def _client_ip(req: Request) -> str:
+    fwd = req.headers.get("x-forwarded-for", "")
+    return fwd.split(",")[0].strip() if fwd else (req.client.host if req.client else "")
+
+
+def _sign(exp: int) -> str:
+    return f"{exp}.{hmac.new(SECRET, str(exp).encode(), hashlib.sha256).hexdigest()}"
+
+
+def _is_admin(req: Request) -> bool:
+    tok = req.cookies.get(COOKIE, "")
+    try:
+        exp = int(tok.split(".")[0])
+    except ValueError:
+        return False
+    return exp > time.time() and hmac.compare_digest(tok, _sign(exp))
+
+
+@app.post("/api/visit")
+async def visit(req: Request):
+    try:
+        info = await req.json()
+    except Exception:  # noqa: BLE001
+        info = {}
+    if not isinstance(info, dict):
+        info = {}
+    ua = req.headers.get("user-agent", "")
+    dev = parse_ua(ua, info)
+    vid = str(info.get("vid") or "")[:40] or uuid.uuid4().hex[:12]
+    visits.add_async({
+        "ts": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), "visitor": vid,
+        "ip": mask_ip(_client_ip(req)), "ua": ua, **dev, "path": str(info.get("path") or "")[:120],
+        "screen": f"{info.get('sw', '')}x{info.get('sh', '')}@{info.get('dpr', '')}",
+        "lang": str(info.get("lang") or "")[:20], "referrer": str(info.get("ref") or "")[:200],
+    })
+    return {"ok": True}
+
+
+@app.post("/api/login")
+async def login(req: Request):
+    ip = _client_ip(req)
+    fails = [t for t in _login_fail.get(ip, []) if time.time() - t < 600]
+    if len(fails) >= 10:
+        raise HTTPException(429, "嘗試次數太多，請 10 分鐘後再試")
+    try:
+        body = await req.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    u, p = str(body.get("username", "")), str(body.get("password", ""))
+    if not (hmac.compare_digest(u, ADMIN_USER) and hmac.compare_digest(p, ADMIN_PASS)):
+        _login_fail[ip] = fails + [time.time()]
+        raise HTTPException(401, "帳號或密碼錯誤")
+    _login_fail.pop(ip, None)
+    resp = JSONResponse({"ok": True})
+    https = req.headers.get("x-forwarded-proto", req.url.scheme) == "https"
+    resp.set_cookie(COOKIE, _sign(int(time.time()) + SESSION_DAYS * 86400), max_age=SESSION_DAYS * 86400,
+                    httponly=True, samesite="lax", secure=https)
+    return resp
+
+
+@app.post("/api/logout")
+def logout():
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(COOKIE)
+    return resp
+
+
+@app.get("/api/admin/me")
+def admin_me(req: Request):
+    return {"admin": _is_admin(req)}
+
+
+@app.get("/api/admin/visits")
+def admin_visits(req: Request, limit: int = 300, bots: int = 0):
+    if not _is_admin(req):
+        raise HTTPException(401, "請先登入")
+    try:
+        rows = visits.recent(20000)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"讀取造訪紀錄失敗：{e}")
+    stats = summarize(rows, bool(bots))
+    shown = [r for r in rows if bots or r["device"] != "機器人"][: max(1, min(limit, 2000))]
+    out = []
+    for r in shown:
+        r = dict(r)
+        r["time"] = to_local(r["ts"]).strftime("%Y-%m-%d %H:%M:%S")
+        r.pop("_local", None)
+        out.append(r)
+    return {"stats": stats, "rows": out, "storage": visits.kind, "storage_error": visits.error,
+            "default_password": ADMIN_PASS == "admin"}
 
 
 @app.get("/api/defaults")
